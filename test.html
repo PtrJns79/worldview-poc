@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SECTOR_MATRIX // STABLE</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link rel="stylesheet" href="test-style.css">
+</head>
+<body>
+<header id="tools-header">
+    <button id="screenshot-btn">COPY_ALL_SECTORS</button>
+    <button id="zoom-in" class="tool-btn">ZOOM_IN</button>
+    <button id="zoom-out" class="tool-btn">ZOOM_OUT</button>
+    <div class="status-indicator">MASTER_SYNC: MAP_A // ALT: 10KM</div>
+</header>
+
+    <div class="test-grid">
+        <div class="pane"><div id="map-a" class="map"></div></div>
+        <div class="pane"><div id="map-b" class="map"></div></div>
+        <div class="pane"><div id="map-c" class="map"></div></div>
+        <div class="pane"><div id="map-d" class="map"></div></div>
+    </div>
+    <script src="test-logic.js"></script>
+</body>
+</html>
