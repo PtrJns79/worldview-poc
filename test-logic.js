@@ -1,66 +1,118 @@
-Cesium.Ion.defaultAccessToken = ''; 
+/**
+ * test-logic.js
+ * Wires panes to layers. All actual logic lives in layers/ and layer-registry.js.
+ * To change what a pane shows, edit the PANE_CONFIG below.
+ */
 
-const LONDON_10KM = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 10000.0);
+Cesium.Ion.defaultAccessToken = '';
+
+const LONDON = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 25000.0);
+const LOOK_DOWN = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
+
+// ─── PANE CONFIGURATION ──────────────────────────────────────────────────────
+// Edit this to change what each pane shows.
+// Each pane can have multiple layer IDs — they stack.
+const PANE_CONFIG = [
+    { id: 'map-a', label: 'FLIGHTS',   layers: ['flights']          },
+    { id: 'map-b', label: 'WEATHER',   layers: ['weather']          },
+    { id: 'map-c', label: 'AIRSPACE',  layers: ['airspace']         },
+    { id: 'map-d', label: 'SATELLITE', layers: ['terrain']          },
+];
+// ─────────────────────────────────────────────────────────────────────────────
+
 const viewers = {};
 let activeMaster = 'map-a';
 
-async function initSector(id, providerPromise, label) {
-    try {
-        const provider = await Promise.resolve(providerPromise);
-        const viewer = new Cesium.Viewer(id, {
-            baseLayer: new Cesium.ImageryLayer(provider),
-            baseLayerPicker: false,
-            geocoder: false,
-            animation: false,
-            timeline: false,
-            navigationHelpButton: false,
-            contextOptions: { webgl: { preserveDrawingBuffer: true } }
-        });
+// Base layer options per pane — dark tactical grid default
+const BASE_PROVIDERS = {
+    'map-a': () => new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png' }),
+    'map-b': () => new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png' }),
+    'map-c': () => new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png' }),
+    'map-d': () => new Cesium.GridImageryProvider({ color: Cesium.Color.fromCssColorString('#001a00'), backgroundColor: Cesium.Color.BLACK })
+};
 
-        viewer.camera.setView({
-            destination: LONDON_10KM,
-            orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 }
-        });
+async function initPane(config) {
+    const provider = BASE_PROVIDERS[config.id]?.() || new Cesium.GridImageryProvider();
 
-        const labelEl = document.createElement('div');
-        labelEl.style.cssText = "position:absolute; top:10px; left:10px; color:#0f0; font-family:monospace; background:rgba(0,0,0,0.8); padding:4px 8px; border:1px solid #0f0; font-size:11px; z-index:100; pointer-events:none;";
-        labelEl.innerText = `[ ${label} ]`;
-        viewer.container.appendChild(labelEl);
+    const viewer = new Cesium.Viewer(config.id, {
+        baseLayer: new Cesium.ImageryLayer(provider),
+        baseLayerPicker: false,
+        geocoder: false,
+        animation: false,
+        timeline: false,
+        navigationHelpButton: false,
+        infoBox: true,
+        selectionIndicator: true,
+        contextOptions: { webgl: { preserveDrawingBuffer: true } }
+    });
 
-        viewers[id] = viewer;
-        
-    } catch (e) { console.error(`ERR_${id}:`, e); }
+    viewer.camera.setView({ destination: LONDON, orientation: LOOK_DOWN });
+
+    // Pane label
+    const labelEl = document.createElement('div');
+    labelEl.className = 'pane-label';
+    labelEl.innerText = `[ ${config.label} ]`;
+    viewer.container.appendChild(labelEl);
+
+    viewers[config.id] = viewer;
+
+    // Register master on hover
+    viewer.container.addEventListener('mouseenter', () => {
+        activeMaster = config.id;
+        updateStatusBar();
+    });
+
+    // Assign layers via registry
+    await LayerRegistry.assignLayers(config.id, viewer, config.layers);
 }
 
-function setupMasterSync() {
+function setupCameraSync() {
     Object.keys(viewers).forEach(id => {
-        const viewer = viewers[id];
-
-        // Dynamic Master Switching
-        viewer.container.addEventListener('mouseenter', () => {
-            activeMaster = id;
-            document.querySelector('.status-indicator').innerText = `MASTER_SYNC: ${id.toUpperCase().replace('-', '_')}`;
-        });
-
-        viewer.scene.postRender.addEventListener(() => {
+        viewers[id].scene.postRender.addEventListener(() => {
             if (id !== activeMaster) return;
-
-            const dest = viewer.camera.position.clone();
-            const dir = viewer.camera.direction.clone();
-            const up = viewer.camera.up.clone();
+            const cam = viewers[id].camera;
+            const dest = cam.position.clone();
+            const dir = cam.direction.clone();
+            const up = cam.up.clone();
 
             Object.keys(viewers).forEach(targetId => {
                 if (targetId !== id) {
-                    viewers[targetId].camera.setView({
-                        destination: dest,
-                        orientation: { direction: dir, up: up }
-                    });
+                    viewers[targetId].camera.setView({ destination: dest, orientation: { direction: dir, up } });
                 }
             });
+
+            updateStatusBar();
         });
     });
 }
 
+function updateStatusBar() {
+    const master = viewers[activeMaster];
+    if (!master) return;
+    const cart = master.camera.positionCartographic;
+    const alt = cart ? (cart.height / 1000).toFixed(1) : '?';
+    document.getElementById('status-master').innerText = `MASTER: ${activeMaster.toUpperCase().replace('-','_')}`;
+    document.getElementById('status-alt').innerText = `ALT: ${alt}KM`;
+}
+
+// ─── ZOOM ─────────────────────────────────────────────────────────────────────
+function handleZoom(dir) {
+    const master = viewers[activeMaster];
+    if (!master) return;
+    const h = master.camera.positionCartographic.height;
+    dir === 'in' ? master.camera.zoomIn(h * 0.25) : master.camera.zoomOut(h * 0.25);
+}
+document.getElementById('zoom-in').addEventListener('click', () => handleZoom('in'));
+document.getElementById('zoom-out').addEventListener('click', () => handleZoom('out'));
+
+// ─── REFRESH (flights only — conserve API credits) ────────────────────────────
+document.getElementById('refresh-btn').addEventListener('click', async () => {
+    document.getElementById('refresh-btn').innerText = 'FETCHING...';
+    await LayerRegistry.refresh('flights', null, viewers);
+    document.getElementById('refresh-btn').innerText = 'REFRESH_FLIGHTS';
+});
+
+// ─── SCREENSHOT ───────────────────────────────────────────────────────────────
 document.getElementById('screenshot-btn').addEventListener('click', async () => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -68,38 +120,32 @@ document.getElementById('screenshot-btn').addEventListener('click', async () => 
     canvas.width = grid.clientWidth;
     canvas.height = grid.clientHeight;
 
-    ['map-a', 'map-b', 'map-c', 'map-d'].forEach((id, index) => {
+    ['map-a', 'map-b', 'map-c', 'map-d'].forEach((id, i) => {
         const vCanvas = document.querySelector(`#${id} canvas`);
-        const x = (index % 2) * (canvas.width / 2);
-        const y = Math.floor(index / 2) * (canvas.height / 2);
+        if (!vCanvas) return;
+        const x = (i % 2) * (canvas.width / 2);
+        const y = Math.floor(i / 2) * (canvas.height / 2);
         ctx.drawImage(vCanvas, x, y, canvas.width / 2, canvas.height / 2);
     });
 
     canvas.toBlob(async (blob) => {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        alert("COPIED!");
+        document.getElementById('screenshot-btn').innerText = 'COPIED!';
+        setTimeout(() => document.getElementById('screenshot-btn').innerText = 'COPY_ALL', 2000);
     });
 });
 
-// INITIALIZATION SEQUENCE
-const sectors = [
-    { id: 'map-a', label: 'MASTER_A',  p: new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png' }) },
-    { id: 'map-b', label: 'OSM_B',     p: new Cesium.OpenStreetMapImageryProvider({ url: 'https://a.tile.openstreetmap.org/' }) },
-    { id: 'map-c', label: 'VOYAGER_C', p: new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}.png' }) },
-    { id: 'map-d', label: 'LIGHT_D',   p: new Cesium.UrlTemplateImageryProvider({ url: 'https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png' }) }
-];
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
 
-Promise.all(sectors.map(s => initSector(s.id, s.p, s.label))).then(setupMasterSync);
+// Register all layers
+LayerRegistry.register(FlightsLayer);
+LayerRegistry.register(WeatherLayer);
+LayerRegistry.register(AirspaceLayer);
+LayerRegistry.register(TerrainLayer);
 
-// GLOBAL ZOOM LOGIC
-const zoomFactor = 0.25; // 25% change per click
-
-function handleZoom(direction) {
-    const master = viewers[activeMaster];
-    if (!master) return;
-    const height = master.camera.positionCartographic.height;
-    const amount = height * zoomFactor;
-    direction === 'in' ? master.camera.zoomIn(amount) : master.camera.zoomOut(amount);
-}
-document.getElementById('zoom-in').addEventListener('click', () => handleZoom('in'));
-document.getElementById('zoom-out').addEventListener('click', () => handleZoom('out'));
+// Init all panes then set up sync
+Promise.all(PANE_CONFIG.map(initPane)).then(() => {
+    setupCameraSync();
+    updateStatusBar();
+    console.log('[boot] All panes initialised');
+});
