@@ -95,7 +95,11 @@
 Cesium.Ion.defaultAccessToken = '';
 
 const LONDON = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 25000.0);
+const LONDON_200KM = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 200000.0);
 const LOOK_DOWN = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
+
+// Panes excluded from camera sync — fixed at their own altitude
+const SYNC_EXEMPT = new Set(['map-b']);
 
 const viewers = {};
 let activeMaster = 'map-a';
@@ -375,12 +379,28 @@ function makeOsmLayer() {
     );
 }
 
+function makeVoyagerLayer() {
+    return new Cesium.ImageryLayer(
+        new Cesium.UrlTemplateImageryProvider({
+            url: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+            credit: 'CartoDB Voyager',
+            minimumLevel: 0,
+            maximumLevel: 19
+        })
+    );
+}
+
 // Per-pane base layers
 const PANE_BASE = {
     'map-a': makeDarkLayer,
-    'map-b': makeOsmLayer,    // lighter base under weather radar
+    'map-b': makeVoyagerLayer,  // Voyager: clean coloured base, radar colours read well against it
     'map-c': makeDarkLayer,
-    'map-d': makeDarkLayer,   // terrain layer replaces this anyway
+    'map-d': makeDarkLayer,     // terrain layer replaces this anyway
+};
+
+// Per-pane default camera — override LONDON default where needed
+const PANE_CAMERA = {
+    'map-b': LONDON_200KM,      // weather fixed at 200km, within RainViewer tile range
 };
 
 async function initPane(config) {
@@ -399,7 +419,8 @@ async function initPane(config) {
         skyAtmosphere: false,
     });
 
-    viewer.camera.setView({ destination: LONDON, orientation: LOOK_DOWN });
+    const cameraAlt = PANE_CAMERA[config.id] || LONDON;
+    viewer.camera.setView({ destination: cameraAlt, orientation: LOOK_DOWN });
 
     // Pane label
     const lbl = document.createElement('div');
@@ -409,10 +430,12 @@ async function initPane(config) {
 
     viewers[config.id] = viewer;
 
-    // Master on hover
+    // Master on hover — exempt panes never become master
     viewer.container.addEventListener('mouseenter', () => {
-        activeMaster = config.id;
-        updateStatusBar();
+        if (!SYNC_EXEMPT.has(config.id)) {
+            activeMaster = config.id;
+            updateStatusBar();
+        }
     });
 
     // Init the layer
@@ -423,18 +446,26 @@ async function initPane(config) {
 function setupCameraSync() {
     Object.keys(viewers).forEach(id => {
         viewers[id].scene.postRender.addEventListener(() => {
+            // Exempt panes never drive the sync and never receive it
+            if (SYNC_EXEMPT.has(id)) return;
             if (id !== activeMaster) return;
+
             const cam = viewers[id].camera;
             const dest = cam.position.clone();
             const dir  = cam.direction.clone();
             const up   = cam.up.clone();
+
             Object.keys(viewers).forEach(tid => {
-                if (tid !== id) viewers[tid].camera.setView({ destination: dest, orientation: { direction: dir, up } });
+                if (tid !== id && !SYNC_EXEMPT.has(tid)) {
+                    viewers[tid].camera.setView({ destination: dest, orientation: { direction: dir, up } });
+                }
             });
             updateStatusBar();
         });
     });
 }
+
+// Prevent weather pane from becoming master when hovered — handled in initPane mouseenter
 
 function updateStatusBar() {
     const master = viewers[activeMaster];
