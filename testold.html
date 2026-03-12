@@ -191,14 +191,9 @@ const WeatherLayer = {
             if (!frames || !frames.length) return;
             const latest = frames[frames.length - 1];
             const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
-            const provider = new Cesium.UrlTemplateImageryProvider({
-                url: tileUrl,
-                minimumLevel: 0,
-                maximumLevel: 12,
-                credit: 'RainViewer'
-            });
-            this._imageryLayer = new Cesium.ImageryLayer(provider, { alpha: 0.65 });
-            v.imageryLayers.add(this._imageryLayer);
+            const provider = new Cesium.UrlTemplateImageryProvider({ url: tileUrl, minimumLevel: 0, maximumLevel: 12, credit: 'RainViewer' });
+            this._imageryLayer = v.imageryLayers.addImageryProvider(provider);
+            this._imageryLayer.alpha = 0.65;
             console.log('[weather] loaded');
         } catch(e) { console.warn('[weather] fetch failed:', e.message); }
     },
@@ -303,23 +298,18 @@ const TerrainLayer = {
         if (this._satLayer)   { v.imageryLayers.remove(this._satLayer, true);   this._satLayer = null; }
         if (this._roadsLayer) { v.imageryLayers.remove(this._roadsLayer, true); this._roadsLayer = null; }
 
-        const satProvider = new Cesium.UrlTemplateImageryProvider({
+        const sat = new Cesium.UrlTemplateImageryProvider({
             url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            credit: 'Esri World Imagery',
-            minimumLevel: 0,
-            maximumLevel: 19
+            credit: 'Esri', minimumLevel: 0, maximumLevel: 19
         });
-        this._satLayer = new Cesium.ImageryLayer(satProvider);
-        v.imageryLayers.add(this._satLayer);
+        this._satLayer = v.imageryLayers.addImageryProvider(sat, 1);
 
-        const roadsProvider = new Cesium.UrlTemplateImageryProvider({
+        const roads = new Cesium.UrlTemplateImageryProvider({
             url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-            credit: 'Esri',
-            minimumLevel: 0,
-            maximumLevel: 19
+            credit: 'Esri', minimumLevel: 0, maximumLevel: 19
         });
-        this._roadsLayer = new Cesium.ImageryLayer(roadsProvider, { alpha: 0.5 });
-        v.imageryLayers.add(this._roadsLayer);
+        this._roadsLayer = v.imageryLayers.addImageryProvider(roads);
+        this._roadsLayer.alpha = 0.5;
         console.log('[terrain] loaded');
     },
 
@@ -349,44 +339,40 @@ const PANE_CONFIG = [
     { id: 'map-d', label: 'SATELLITE', layer: TerrainLayer  },
 ];
 
-// Cesium 1.110: imageryProvider constructor option is deprecated.
-// Must use baseLayer: Cesium.ImageryLayer.fromProviderAsync(...) or
-// baseLayer: new Cesium.ImageryLayer(provider) pattern.
-
-function makeDarkLayer() {
-    return new Cesium.ImageryLayer(
-        new Cesium.UrlTemplateImageryProvider({
-            url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-            credit: 'CartoDB',
-            minimumLevel: 0,
-            maximumLevel: 19
-        })
-    );
+function makeDarkProvider() {
+    // OSM via CartoDB dark — subdomain {s} not supported by Cesium UrlTemplate directly
+    // Use a single fixed subdomain to avoid zoom-level issues
+    return new Cesium.UrlTemplateImageryProvider({
+        url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        credit: 'CartoDB',
+        minimumLevel: 0,
+        maximumLevel: 19,
+        tileWidth: 256,
+        tileHeight: 256
+    });
 }
 
-function makeOsmLayer() {
-    return new Cesium.ImageryLayer(
-        new Cesium.UrlTemplateImageryProvider({
-            url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            credit: 'OpenStreetMap',
-            minimumLevel: 0,
-            maximumLevel: 19
-        })
-    );
+function makeOsmProvider() {
+    return new Cesium.OpenStreetMapImageryProvider({
+        url: 'https://a.tile.openstreetmap.org/',
+        credit: 'OSM',
+        minimumLevel: 0,
+        maximumLevel: 19
+    });
 }
 
-// Per-pane base layers
+// Per-pane base layer — weather gets OSM so the radar overlay reads clearly
 const PANE_BASE = {
-    'map-a': makeDarkLayer,
-    'map-b': makeOsmLayer,    // lighter base under weather radar
-    'map-c': makeDarkLayer,
-    'map-d': makeDarkLayer,   // terrain layer replaces this anyway
+    'map-a': makeDarkProvider,
+    'map-b': makeOsmProvider,   // weather: lighter base reads better under radar
+    'map-c': makeDarkProvider,
+    'map-d': makeDarkProvider,  // terrain layer replaces this anyway
 };
 
 async function initPane(config) {
-    const baseLayerFn = PANE_BASE[config.id] || makeDarkLayer;
+    const providerFn = PANE_BASE[config.id] || makeDarkProvider;
     const viewer = new Cesium.Viewer(config.id, {
-        baseLayer: baseLayerFn(),
+        imageryProvider: providerFn(),
         baseLayerPicker: false,
         geocoder: false,
         homeButton: false,
