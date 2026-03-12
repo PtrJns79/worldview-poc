@@ -68,7 +68,7 @@
 <header id="tools-header">
     <span id="sys-title">WORLDVIEW // SECTOR_MATRIX</span>
     <div class="sep"></div>
-    <button id="btn-flights"  class="tool-btn active"   onclick="toggleLayer('flights')">● FLIGHTS</button>
+    <button id="btn-flights"  class="tool-btn inactive" onclick="toggleLayer('flights')">● FLIGHTS</button>
     <button id="btn-weather"  class="tool-btn active"   onclick="toggleLayer('weather')">● WEATHER</button>
     <button id="btn-airspace" class="tool-btn active"   onclick="toggleLayer('airspace')">● AIRSPACE</button>
     <button id="btn-terrain"  class="tool-btn active"   onclick="toggleLayer('terrain')">● SATELLITE</button>
@@ -101,7 +101,8 @@ const viewers = {};
 let activeMaster = 'map-a';
 
 // Which layers are currently enabled (for toggle)
-const layerEnabled = { flights: true, weather: true, airspace: true, terrain: true };
+// flights disabled by default — preserve API credits
+const layerEnabled = { flights: false, weather: true, airspace: true, terrain: true };
 
 // ─── LAYER: FLIGHTS ───────────────────────────────────────────────────────────
 const FlightsLayer = {
@@ -111,7 +112,9 @@ const FlightsLayer = {
 
     init(viewer) {
         this._viewer = viewer;
-        return this.refresh();
+        // Do NOT auto-fetch on init — preserve API credits
+        // Flights start hidden; user must enable + click REFRESH_FLIGHTS
+        console.log('[flights] standby — disabled by default');
     },
 
     async refresh() {
@@ -146,6 +149,8 @@ const FlightsLayer = {
                 });
                 this._entities.push(e);
             });
+            // Respect current toggle state after fetch
+            if (!layerEnabled.flights) this.hide();
             document.getElementById('btn-flights').innerText = `● FLIGHTS (${this._entities.length})`;
             return { count: this._entities.length };
         } catch(e) {
@@ -244,8 +249,9 @@ const AirspaceLayer = {
                 ellipse: {
                     semiMinorAxis: ap.radius, semiMajorAxis: ap.radius,
                     material: fillColor, outline: true, outlineColor,
-                    outlineWidth: 2, height: 0,
-                    extrudedHeight: isA ? 7000 : 3000
+                    outlineWidth: 2,
+                    height: 0
+                    // No extrudedHeight — keeps them flat 2D rings, no 3D cylinders
                 }
             });
 
@@ -334,16 +340,39 @@ const PANE_CONFIG = [
 ];
 
 function makeDarkProvider() {
+    // OSM via CartoDB dark — subdomain {s} not supported by Cesium UrlTemplate directly
+    // Use a single fixed subdomain to avoid zoom-level issues
     return new Cesium.UrlTemplateImageryProvider({
         url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-        credit: 'CartoDB', minimumLevel: 0, maximumLevel: 19
+        credit: 'CartoDB',
+        minimumLevel: 0,
+        maximumLevel: 19,
+        tileWidth: 256,
+        tileHeight: 256
     });
 }
 
+function makeOsmProvider() {
+    return new Cesium.OpenStreetMapImageryProvider({
+        url: 'https://a.tile.openstreetmap.org/',
+        credit: 'OSM',
+        minimumLevel: 0,
+        maximumLevel: 19
+    });
+}
+
+// Per-pane base layer — weather gets OSM so the radar overlay reads clearly
+const PANE_BASE = {
+    'map-a': makeDarkProvider,
+    'map-b': makeOsmProvider,   // weather: lighter base reads better under radar
+    'map-c': makeDarkProvider,
+    'map-d': makeDarkProvider,  // terrain layer replaces this anyway
+};
+
 async function initPane(config) {
-    // Use the same init pattern as the original working app.js
+    const providerFn = PANE_BASE[config.id] || makeDarkProvider;
     const viewer = new Cesium.Viewer(config.id, {
-        imageryProvider: makeDarkProvider(),
+        imageryProvider: providerFn(),
         baseLayerPicker: false,
         geocoder: false,
         homeButton: false,
@@ -457,6 +486,10 @@ async function takeScreenshot() {
 Promise.all(PANE_CONFIG.map(initPane)).then(() => {
     setupCameraSync();
     updateStatusBar();
+    // Apply initial disabled states
+    Object.keys(layerEnabled).forEach(id => {
+        if (!layerEnabled[id]) layerModules[id].hide();
+    });
     console.log('[boot] all panes ready');
 });
 </script>
