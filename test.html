@@ -41,11 +41,16 @@
             color: #00cc33; font-size: 11px; opacity: 0.8;
         }
         .test-grid {
-            display: grid; grid-template-columns: 50% 50%;
+            display: grid;
+            grid-template-columns: 50% 50%;
             grid-template-rows: 50% 50%;
             width: 100vw; height: calc(100vh - 48px); overflow: hidden;
         }
         .pane { position: relative; border: 0.5px solid #0d200d; overflow: hidden; }
+        /* map-a spans both rows on the left */
+        #pane-a { grid-column: 1; grid-row: 1 / 3; }
+        #pane-b { grid-column: 2; grid-row: 1; }
+        #pane-c { grid-column: 2; grid-row: 2; }
         .map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
         .pane-label {
             position: absolute; top: 10px; left: 10px;
@@ -61,6 +66,65 @@
         }
         .cesium-widget-credits,
         .cesium-viewer-toolbar { display: none !important; }
+
+        /* ── PANE CONTROL STRIPS ─────────────────────────── */
+        .pane-controls {
+            position: absolute; bottom: 10px; left: 10px;
+            z-index: 100; display: flex; gap: 5px; flex-wrap: wrap;
+        }
+        .pane-btn {
+            padding: 4px 9px; background: rgba(0,0,0,0.85);
+            color: #00cc33; border: 1px solid #1a4a1a;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px; cursor: pointer; letter-spacing: 0.04em;
+            transition: all 0.15s ease;
+        }
+        .pane-btn:hover  { background: rgba(0,40,0,0.95); border-color: #00cc33; color: #00ff41; }
+        .pane-btn.active { background: rgba(0,60,0,0.95); border-color: #00ff41; color: #00ff41; }
+        .pane-btn.inactive { opacity: 0.4; }
+
+        /* ── AIRCRAFT POPUP ──────────────────────────────── */
+        #aircraft-popup {
+            display: none;
+            position: fixed; top: 60px; right: 16px;
+            width: 280px; background: #050505;
+            border: 1px solid #00cc33;
+            z-index: 1000; font-family: 'Share Tech Mono', monospace;
+            box-shadow: 0 0 20px rgba(0,255,65,0.15);
+        }
+        #aircraft-popup.visible { display: block; }
+        #popup-header {
+            background: #001a00; padding: 8px 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #1a4a1a;
+        }
+        #popup-callsign { color: #00ff41; font-size: 13px; letter-spacing: 0.1em; }
+        #popup-close {
+            color: #00cc33; cursor: pointer; font-size: 16px; line-height: 1;
+            background: none; border: none; font-family: inherit; padding: 0;
+        }
+        #popup-close:hover { color: #00ff41; }
+        #popup-photo {
+            width: 100%; height: 160px; object-fit: cover;
+            display: block; background: #0a0a0a;
+        }
+        #popup-photo-credit {
+            font-size: 9px; color: #336633; padding: 3px 8px;
+            border-bottom: 1px solid #0d200d; text-align: right;
+        }
+        #popup-body { padding: 10px 12px; }
+        .popup-row {
+            display: flex; justify-content: space-between;
+            padding: 3px 0; border-bottom: 1px solid #0d200d;
+            font-size: 10px;
+        }
+        .popup-row:last-child { border-bottom: none; }
+        .popup-key { color: #336633; }
+        .popup-val { color: #00cc33; text-align: right; max-width: 160px; word-break: break-all; }
+        #popup-loading {
+            padding: 20px; text-align: center;
+            color: #336633; font-size: 11px;
+        }
     </style>
 </head>
 <body>
@@ -68,14 +132,8 @@
 <header id="tools-header">
     <span id="sys-title">WORLDVIEW // SECTOR_MATRIX</span>
     <div class="sep"></div>
-    <button id="btn-flights"  class="tool-btn inactive" onclick="toggleLayer('flights')">● FLIGHTS</button>
-    <button id="btn-weather"  class="tool-btn active"   onclick="toggleLayer('weather')">● WEATHER</button>
-    <button id="btn-airspace" class="tool-btn active"   onclick="toggleLayer('airspace')">● AIRSPACE</button>
-    <button id="btn-terrain"  class="tool-btn active"   onclick="toggleLayer('terrain')">● SATELLITE</button>
-    <div class="sep"></div>
-    <button id="refresh-btn"  class="tool-btn"          onclick="manualRefreshFlights()">REFRESH_FLIGHTS</button>
-    <button id="zoom-in"      class="tool-btn"          onclick="handleZoom('in')">ZOOM_IN</button>
-    <button id="zoom-out"     class="tool-btn"          onclick="handleZoom('out')">ZOOM_OUT</button>
+    <button id="zoom-in"        class="tool-btn" onclick="handleZoom('in')">ZOOM_IN</button>
+    <button id="zoom-out"       class="tool-btn" onclick="handleZoom('out')">ZOOM_OUT</button>
     <button id="screenshot-btn" class="tool-btn primary" onclick="takeScreenshot()">COPY_ALL</button>
     <div id="header-status">
         <span id="status-master">MASTER: MAP_A</span>
@@ -84,10 +142,39 @@
 </header>
 
 <div class="test-grid">
-    <div class="pane"><div id="map-a" class="map"></div></div>
-    <div class="pane"><div id="map-b" class="map"></div></div>
-    <div class="pane"><div id="map-c" class="map"></div></div>
-    <div class="pane"><div id="map-d" class="map"></div></div>
+    <div class="pane" id="pane-a">
+        <div id="map-a" class="map"></div>
+        <div class="pane-controls">
+            <button id="btn-flights"  class="pane-btn inactive" onclick="toggleLayer('flights')">● FLIGHTS</button>
+            <button id="btn-airspace" class="pane-btn active"   onclick="toggleLayer('airspace')">● AIRSPACE</button>
+            <button id="refresh-btn"  class="pane-btn"          onclick="manualRefreshFlights()">REFRESH</button>
+            <button id="btn-details"  class="pane-btn inactive" onclick="toggleDetails()">DETAILS</button>
+        </div>
+    </div>
+    <div class="pane" id="pane-b">
+        <div id="map-b" class="map"></div>
+        <div class="pane-controls">
+            <button id="btn-weather" class="pane-btn active" onclick="toggleLayer('weather')">● WEATHER</button>
+        </div>
+    </div>
+    <div class="pane" id="pane-c">
+        <div id="map-c" class="map"></div>
+        <div class="pane-controls">
+            <button id="btn-terrain" class="pane-btn active" onclick="toggleLayer('terrain')">● SATELLITE</button>
+        </div>
+    </div>
+</div>
+
+<!-- Aircraft detail popup -->
+<div id="aircraft-popup">
+    <div id="popup-header">
+        <span id="popup-callsign">---</span>
+        <button id="popup-close" onclick="closePopup()">✕</button>
+    </div>
+    <div id="popup-loading">FETCHING DATA...</div>
+    <img id="popup-photo" style="display:none" alt="Aircraft photo" />
+    <div id="popup-photo-credit"></div>
+    <div id="popup-body"></div>
 </div>
 
 <script>
@@ -113,12 +200,26 @@ const FlightsLayer = {
     id: 'flights',
     _entities: [],
     _viewer: null,
+    _detailsEnabled: false,
+    _metadataCache: {}, // icao24 -> metadata, avoid re-fetching
 
     init(viewer) {
         this._viewer = viewer;
-        // Do NOT auto-fetch on init — preserve API credits
-        // Flights start hidden; user must enable + click REFRESH_FLIGHTS
+        this._setupClickHandler();
         console.log('[flights] standby — disabled by default');
+    },
+
+    _setupClickHandler() {
+        const v = this._viewer;
+        if (!v) return;
+        const handler = new Cesium.ScreenSpaceEventHandler(v.scene.canvas);
+        handler.setInputAction((click) => {
+            const picked = v.scene.pick(click.position);
+            if (!picked || !picked.id) return;
+            const props = picked.id.properties;
+            if (!props || !props.layer || props.layer.getValue() !== 'flights') return;
+            openPopup(picked.id);
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
     },
 
     async refresh() {
@@ -135,33 +236,126 @@ const FlightsLayer = {
             if (!data.states) return { count: 0 };
 
             data.states.forEach(p => {
-                const lon = p[5], lat = p[6], alt = p[7] || 1000;
+                const icao24   = p[0] || '';
                 const callsign = (p[1] || 'UNKNWN').trim();
-                const speed = p[9] ? Math.round(p[9] * 1.944) : '?';
+                const country  = p[2] || '?';
+                const lon      = p[5], lat = p[6];
+                const alt      = p[7] || 1000;
+                const onGround = p[8] || false;
+                const speed    = p[9] ? Math.round(p[9] * 1.944) : 0;
+                const heading  = p[10] || 0;
                 if (!lon || !lat) return;
+
+                // Heading arrow using billboard with rotation
+                const headingRad = Cesium.Math.toRadians(heading);
                 const e = v.entities.add({
                     position: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
-                    point: { pixelSize: 8, color: Cesium.Color.LIME, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
+                    billboard: {
+                        image: this._makeArrowCanvas(onGround),
+                        rotation: -headingRad,
+                        alignedAxis: Cesium.Cartesian3.UNIT_Z,
+                        width: 20, height: 20,
+                        color: onGround
+                            ? Cesium.Color.YELLOW
+                            : Cesium.Color.LIME,
+                        pixelOffset: new Cesium.Cartesian2(0, 0)
+                    },
                     label: {
-                        text: `${callsign}\n${Math.round(alt)}m ${speed}kt`,
-                        font: '9pt Courier New', fillColor: Cesium.Color.LIME,
-                        pixelOffset: new Cesium.Cartesian2(0, -28),
+                        text: callsign,
+                        font: '9pt Courier New',
+                        fillColor: onGround ? Cesium.Color.YELLOW : Cesium.Color.LIME,
+                        pixelOffset: new Cesium.Cartesian2(14, 0),
                         showBackground: true,
                         backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.75)'),
-                        backgroundPadding: new Cesium.Cartesian2(4, 3)
+                        backgroundPadding: new Cesium.Cartesian2(4, 3),
+                        verticalOrigin: Cesium.VerticalOrigin.CENTER
+                    },
+                    properties: {
+                        layer: 'flights',
+                        icao24, callsign, country,
+                        alt: Math.round(alt),
+                        speed, heading,
+                        onGround,
+                        aircraftType: null  // filled by loadDetails()
                     }
                 });
                 this._entities.push(e);
             });
-            // Respect current toggle state after fetch
+
             if (!layerEnabled.flights) this.hide();
             document.getElementById('btn-flights').innerText = `● FLIGHTS (${this._entities.length})`;
+
+            // If details mode is on, load them automatically after refresh
+            if (this._detailsEnabled) await this.loadDetails();
+
             return { count: this._entities.length };
         } catch(e) {
             console.warn('[flights] fetch failed:', e.message);
             document.getElementById('btn-flights').innerText = `● FLIGHTS (ERR)`;
             return { error: e.message };
         }
+    },
+
+    // Draw a simple arrow canvas for heading indicator
+    _makeArrowCanvas(onGround) {
+        const c = document.createElement('canvas');
+        c.width = 20; c.height = 20;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = onGround ? '#ffff00' : '#00ff41';
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 1;
+        // Arrow pointing up (north = 0 heading, rotation handles the rest)
+        ctx.beginPath();
+        ctx.moveTo(10, 1);   // tip
+        ctx.lineTo(16, 16);  // right base
+        ctx.lineTo(10, 13);  // centre notch
+        ctx.lineTo(4, 16);   // left base
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        return c.toDataURL();
+    },
+
+    // Fetch aircraft type for all visible entities and update labels
+    async loadDetails() {
+        const btn = document.getElementById('btn-details');
+        btn.innerText = 'LOADING...';
+        let loaded = 0;
+
+        for (const e of this._entities) {
+            const icao24 = e.properties.icao24.getValue();
+            if (!icao24) continue;
+
+            // Use cache to avoid re-fetching
+            if (!this._metadataCache[icao24]) {
+                try {
+                    const res = await fetch(`https://opensky-network.org/api/metadata/aircraft/icao24/${icao24}`);
+                    if (res.ok) {
+                        this._metadataCache[icao24] = await res.json();
+                    }
+                } catch(_) {}
+                // Small delay to avoid hammering the API
+                await new Promise(r => setTimeout(r, 80));
+            }
+
+            const meta = this._metadataCache[icao24];
+            if (meta) {
+                e.properties.aircraftType = meta.typecode || meta.model || '?';
+                e.properties.registration = meta.registration || '?';
+                e.properties.operator     = meta.operatorCallsign || meta.owner || '?';
+                e.properties.manufacturer = meta.manufacturerName || '?';
+                e.properties.built        = meta.built || '?';
+
+                // Update label to show type
+                const callsign = e.properties.callsign.getValue();
+                const type     = e.properties.aircraftType;
+                e.label.text   = new Cesium.ConstantProperty(`${callsign}\n${type}`);
+                loaded++;
+            }
+        }
+
+        btn.innerText = `DETAILS (${loaded})`;
+        console.log(`[flights] loaded metadata for ${loaded} aircraft`);
     },
 
     show() { this._entities.forEach(e => e.show = true); },
@@ -345,12 +539,13 @@ const TerrainLayer = {
 };
 
 // ─── PANE SETUP ───────────────────────────────────────────────────────────────
-// Each pane: which layer module to assign
+// map-a: flights + airspace merged
+// map-b: weather only (sync exempt, fixed 200km)
+// map-c: satellite only
 const PANE_CONFIG = [
-    { id: 'map-a', label: 'FLIGHTS',   layer: FlightsLayer  },
-    { id: 'map-b', label: 'WEATHER',   layer: WeatherLayer  },
-    { id: 'map-c', label: 'AIRSPACE',  layer: AirspaceLayer },
-    { id: 'map-d', label: 'SATELLITE', layer: TerrainLayer  },
+    { id: 'map-a', label: 'FLIGHTS + AIRSPACE', layers: [FlightsLayer, AirspaceLayer] },
+    { id: 'map-b', label: 'WEATHER',            layers: [WeatherLayer]                },
+    { id: 'map-c', label: 'SATELLITE',          layers: [TerrainLayer]                },
 ];
 
 // Cesium 1.110: imageryProvider constructor option is deprecated.
@@ -390,17 +585,30 @@ function makeVoyagerLayer() {
     );
 }
 
+function makePositronLayer() {
+    return new Cesium.ImageryLayer(
+        new Cesium.UrlTemplateImageryProvider({
+            url: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            credit: 'CartoDB Positron',
+            minimumLevel: 0,
+            maximumLevel: 19
+        })
+    );
+}
+
 // Per-pane base layers
+// map-a: Positron (light, clean — airspace rings and flight dots pop against it)
+// map-b: Voyager (coloured, radar precipitation colours read well)
+// map-c: Dark (satellite layer replaces it anyway)
 const PANE_BASE = {
-    'map-a': makeDarkLayer,
-    'map-b': makeVoyagerLayer,  // Voyager: clean coloured base, radar colours read well against it
+    'map-a': makePositronLayer,
+    'map-b': makeVoyagerLayer,
     'map-c': makeDarkLayer,
-    'map-d': makeDarkLayer,     // terrain layer replaces this anyway
 };
 
-// Per-pane default camera — override LONDON default where needed
+// Per-pane default camera
 const PANE_CAMERA = {
-    'map-b': LONDON_200KM,      // weather fixed at 200km, within RainViewer tile range
+    'map-b': LONDON_200KM,  // weather fixed at 200km
 };
 
 async function initPane(config) {
@@ -418,6 +626,16 @@ async function initPane(config) {
         skyBox: false,
         skyAtmosphere: false,
     });
+
+    // Explicitly enable mouse/trackpad zoom on all panes
+    viewer.scene.screenSpaceCameraController.enableZoom       = true;
+    viewer.scene.screenSpaceCameraController.enableTranslate  = true;
+    viewer.scene.screenSpaceCameraController.enableRotate     = true;
+    viewer.scene.screenSpaceCameraController.enableTilt       = false; // keep top-down
+    viewer.scene.screenSpaceCameraController.zoomEventTypes   = [
+        Cesium.CameraEventType.WHEEL,
+        Cesium.CameraEventType.PINCH
+    ];
 
     const cameraAlt = PANE_CAMERA[config.id] || LONDON;
     viewer.camera.setView({ destination: cameraAlt, orientation: LOOK_DOWN });
@@ -438,8 +656,11 @@ async function initPane(config) {
         }
     });
 
-    // Init the layer
-    await config.layer.init(viewer);
+    // Init all layers for this pane
+    for (const layer of config.layers) {
+        layer._viewer = viewer;
+        await layer.init(viewer);
+    }
 }
 
 // ─── CAMERA SYNC ─────────────────────────────────────────────────────────────
@@ -498,7 +719,105 @@ async function manualRefreshFlights() {
     const btn = document.getElementById('refresh-btn');
     btn.innerText = 'FETCHING...';
     await FlightsLayer.refresh();
-    btn.innerText = 'REFRESH_FLIGHTS';
+    btn.innerText = 'REFRESH';
+}
+
+async function toggleDetails() {
+    FlightsLayer._detailsEnabled = !FlightsLayer._detailsEnabled;
+    const btn = document.getElementById('btn-details');
+    if (FlightsLayer._detailsEnabled) {
+        btn.classList.add('active');
+        btn.classList.remove('inactive');
+        await FlightsLayer.loadDetails();
+    } else {
+        btn.classList.remove('active');
+        btn.classList.add('inactive');
+        btn.innerText = 'DETAILS';
+        // Revert labels to callsign only
+        FlightsLayer._entities.forEach(e => {
+            const callsign = e.properties.callsign.getValue();
+            e.label.text = new Cesium.ConstantProperty(callsign);
+        });
+    }
+}
+
+async function openPopup(entity) {
+    const popup   = document.getElementById('aircraft-popup');
+    const loading = document.getElementById('popup-loading');
+    const body    = document.getElementById('popup-body');
+    const photo   = document.getElementById('popup-photo');
+    const credit  = document.getElementById('popup-photo-credit');
+
+    const props    = entity.properties;
+    const icao24   = props.icao24.getValue();
+    const callsign = props.callsign.getValue();
+    const alt      = props.alt.getValue();
+    const speed    = props.speed.getValue();
+    const heading  = props.heading.getValue();
+    const country  = props.country.getValue();
+    const onGround = props.onGround.getValue();
+
+    document.getElementById('popup-callsign').innerText = callsign || icao24;
+    popup.classList.add('visible');
+    loading.style.display = 'block';
+    body.innerHTML = '';
+    photo.style.display = 'none';
+    credit.innerText = '';
+
+    // Fetch metadata if not cached
+    let meta = FlightsLayer._metadataCache[icao24];
+    if (!meta && icao24) {
+        try {
+            const res = await fetch(`https://opensky-network.org/api/metadata/aircraft/icao24/${icao24}`);
+            if (res.ok) {
+                meta = await res.json();
+                FlightsLayer._metadataCache[icao24] = meta;
+            }
+        } catch(_) {}
+    }
+
+    // Fetch photo from Planespotters
+    const registration = meta?.registration || '';
+    if (registration) {
+        try {
+            const res = await fetch(`https://api.planespotters.net/pub/photos/reg/${registration}`);
+            if (res.ok) {
+                const pdata = await res.json();
+                const firstPhoto = pdata.photos?.[0];
+                if (firstPhoto) {
+                    photo.src = firstPhoto.thumbnail_large?.src || firstPhoto.thumbnail?.src || '';
+                    photo.style.display = 'block';
+                    credit.innerText = `© ${firstPhoto.photographer || 'unknown'} via Planespotters`;
+                }
+            }
+        } catch(_) {}
+    }
+
+    loading.style.display = 'none';
+
+    // Build info rows
+    const rows = [
+        ['CALLSIGN',     callsign || '—'],
+        ['ICAO24',       icao24 || '—'],
+        ['REGISTRATION', meta?.registration || '—'],
+        ['TYPE',         meta?.typecode || meta?.model || '—'],
+        ['MANUFACTURER', meta?.manufacturerName || '—'],
+        ['OPERATOR',     meta?.operatorCallsign || meta?.owner || '—'],
+        ['BUILT',        meta?.built || '—'],
+        ['COUNTRY',      country || '—'],
+        ['STATUS',       onGround ? 'ON GROUND' : 'AIRBORNE'],
+        ['ALTITUDE',     onGround ? '—' : `${alt}m`],
+        ['SPEED',        `${speed}kt`],
+        ['HEADING',      `${heading}°`],
+    ];
+
+    body.innerHTML = rows.map(([k, v]) =>
+        `<div class="popup-row"><span class="popup-key">${k}</span><span class="popup-val">${v}</span></div>`
+    ).join('');
+}
+
+function closePopup() {
+    document.getElementById('aircraft-popup').classList.remove('visible');
 }
 
 function handleZoom(dir) {
@@ -515,11 +834,17 @@ async function takeScreenshot() {
     const grid = document.querySelector('.test-grid');
     canvas.width = grid.clientWidth;
     canvas.height = grid.clientHeight;
-    ['map-a','map-b','map-c','map-d'].forEach((id, i) => {
-        const vc = document.querySelector(`#${id} canvas`);
-        if (!vc) return;
-        ctx.drawImage(vc, (i % 2) * canvas.width/2, Math.floor(i/2) * canvas.height/2, canvas.width/2, canvas.height/2);
-    });
+
+    // map-a: full left half
+    const va = document.querySelector('#map-a canvas');
+    if (va) ctx.drawImage(va, 0, 0, canvas.width / 2, canvas.height);
+    // map-b: top right
+    const vb = document.querySelector('#map-b canvas');
+    if (vb) ctx.drawImage(vb, canvas.width / 2, 0, canvas.width / 2, canvas.height / 2);
+    // map-c: bottom right
+    const vc = document.querySelector('#map-c canvas');
+    if (vc) ctx.drawImage(vc, canvas.width / 2, canvas.height / 2, canvas.width / 2, canvas.height / 2);
+
     canvas.toBlob(async blob => {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         btn.innerText = 'COPIED!';
