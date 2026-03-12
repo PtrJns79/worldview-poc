@@ -43,14 +43,45 @@
         .test-grid {
             display: grid;
             grid-template-columns: 50% 50%;
-            grid-template-rows: 50% 50%;
+            grid-template-rows: 100%;
             width: 100vw; height: calc(100vh - 48px); overflow: hidden;
         }
-        .pane { position: relative; border: 0.5px solid #0d200d; overflow: hidden; }
-        /* map-a spans both rows on the left */
-        #pane-a { grid-column: 1; grid-row: 1 / 3; }
+        .pane {
+            position: relative;
+            border: 0.5px solid #0d200d; overflow: hidden;
+            display: flex; flex-direction: column;
+        }
+        #pane-a { grid-column: 1; grid-row: 1; }
         #pane-b { grid-column: 2; grid-row: 1; }
-        #pane-c { grid-column: 2; grid-row: 2; }
+
+        /* ── PER-PANE SUB-HEADER ─────────────────────────── */
+        .pane-header {
+            height: 34px; flex-shrink: 0;
+            background: #030a03;
+            border-bottom: 1px solid #0d200d;
+            display: flex; align-items: center;
+            padding: 0 8px; gap: 4px;
+            z-index: 150;
+        }
+        .pane-header-label {
+            color: #336633; font-size: 9px; letter-spacing: 0.1em;
+            margin-right: 6px; white-space: nowrap;
+        }
+        /* Map style selector buttons */
+        .map-style-btn {
+            padding: 3px 8px;
+            background: transparent;
+            color: #336633; border: 1px solid #0d200d;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 9px; cursor: pointer; letter-spacing: 0.04em;
+            transition: all 0.15s ease; white-space: nowrap;
+        }
+        .map-style-btn:hover  { background: #0a1a0a; border-color: #336633; color: #00cc33; }
+        .map-style-btn.active { background: #001a00; border-color: #00cc33; color: #00ff41; }
+
+        .map-wrapper {
+            position: relative; flex: 1; overflow: hidden;
+        }
         .map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
         .pane-label {
             position: absolute; top: 10px; left: 10px;
@@ -59,7 +90,7 @@
             padding: 3px 8px; border: 1px solid #1a4a1a;
             z-index: 100; pointer-events: none; letter-spacing: 0.08em;
         }
-        .pane::after {
+        .map-wrapper::after {
             content: ''; position: absolute; inset: 0;
             background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
             z-index: 50; pointer-events: none;
@@ -67,21 +98,86 @@
         .cesium-widget-credits,
         .cesium-viewer-toolbar { display: none !important; }
 
-        /* ── PANE CONTROL STRIPS ─────────────────────────── */
-        .pane-controls {
-            position: absolute; bottom: 10px; left: 10px;
-            z-index: 100; display: flex; gap: 5px; flex-wrap: wrap;
+        /* ── COLLAPSIBLE CONTROL PANELS ──────────────────── */
+        .ctrl-tab {
+            position: absolute; bottom: 60px; right: 0;
+            z-index: 200; writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            padding: 10px 5px;
+            background: rgba(0,20,0,0.92);
+            color: #00cc33; border: 1px solid #1a4a1a;
+            border-right: none;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px; cursor: pointer; letter-spacing: 0.1em;
+            transition: all 0.15s ease;
+            user-select: none;
         }
+        .ctrl-tab:hover { background: rgba(0,40,0,0.97); color: #00ff41; border-color: #00cc33; }
+
+        .ctrl-panel {
+            position: absolute; top: 0; right: -220px;
+            width: 210px; height: 100%;
+            background: rgba(2,10,2,0.93);
+            border-left: 1px solid #1a4a1a;
+            z-index: 199;
+            display: flex; flex-direction: column;
+            padding: 12px 10px; gap: 6px;
+            overflow-y: auto;
+            transition: right 0.2s ease;
+            backdrop-filter: blur(4px);
+        }
+        .ctrl-panel.open { right: 0; }
+
+        .ctrl-section-label {
+            color: #336633; font-size: 9px; letter-spacing: 0.12em;
+            margin-top: 8px; margin-bottom: 2px;
+            border-bottom: 1px solid #0d200d; padding-bottom: 4px;
+        }
+        .ctrl-section-label:first-child { margin-top: 0; }
+
         .pane-btn {
-            padding: 4px 9px; background: rgba(0,0,0,0.85);
+            padding: 5px 10px;
+            background: rgba(0,0,0,0.5);
             color: #00cc33; border: 1px solid #1a4a1a;
             font-family: 'Share Tech Mono', monospace;
             font-size: 10px; cursor: pointer; letter-spacing: 0.04em;
-            transition: all 0.15s ease;
+            transition: all 0.15s ease; text-align: left; width: 100%;
         }
         .pane-btn:hover  { background: rgba(0,40,0,0.95); border-color: #00cc33; color: #00ff41; }
-        .pane-btn.active { background: rgba(0,60,0,0.95); border-color: #00ff41; color: #00ff41; }
-        .pane-btn.inactive { opacity: 0.4; }
+        .pane-btn.active { background: rgba(0,55,0,0.95); border-color: #00ff41; color: #00ff41; }
+        .pane-btn.inactive { opacity: 0.45; }
+
+        /* ── INFO OVERLAY ────────────────────────────────── */
+        .info-overlay {
+            position: absolute; bottom: 10px; left: 10px;
+            z-index: 100; min-width: 190px; max-width: 240px;
+            background: rgba(2,8,2,0.88);
+            border: 1px solid #0d280d;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 9px; line-height: 1.6;
+            pointer-events: none;
+            backdrop-filter: blur(2px);
+        }
+        .info-overlay-head {
+            padding: 3px 8px;
+            background: rgba(0,20,0,0.7);
+            border-bottom: 1px solid #0d280d;
+            color: #336633; letter-spacing: 0.1em; font-size: 8px;
+        }
+        .info-overlay-body { padding: 5px 8px; }
+        .info-row {
+            display: flex; gap: 6px;
+            padding: 1px 0; border-bottom: 1px solid #0a180a;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-key { color: #265526; min-width: 52px; flex-shrink: 0; }
+        .info-val { color: #00aa22; word-break: break-all; }
+        .info-val.active { color: #00ff41; }
+        .info-divider {
+            padding: 2px 8px; color: #1a3a1a;
+            border-bottom: 1px solid #0a180a;
+            font-size: 8px; letter-spacing: 0.08em;
+        }
 
         /* ── AIRCRAFT POPUP ──────────────────────────────── */
         #aircraft-popup {
@@ -142,27 +238,75 @@
 </header>
 
 <div class="test-grid">
+
+    <!-- PANE A: FLIGHTS + AIRSPACE -->
     <div class="pane" id="pane-a">
-        <div id="map-a" class="map"></div>
-        <div class="pane-controls">
-            <button id="btn-flights"  class="pane-btn inactive" onclick="toggleLayer('flights')">● FLIGHTS</button>
-            <button id="btn-airspace" class="pane-btn active"   onclick="toggleLayer('airspace')">● AIRSPACE</button>
-            <button id="refresh-btn"  class="pane-btn"          onclick="manualRefreshFlights()">REFRESH</button>
-            <button id="btn-details"  class="pane-btn inactive" onclick="toggleDetails()">DETAILS</button>
+        <div class="pane-header">
+            <span class="pane-header-label">BASE:</span>
+            <button class="map-style-btn active" id="style-a-satellite" onclick="setBaseMap('a','satellite',this)">SATELLITE</button>
+            <button class="map-style-btn" id="style-a-positron"  onclick="setBaseMap('a','positron',this)">POSITRON</button>
+            <button class="map-style-btn" id="style-a-voyager"   onclick="setBaseMap('a','voyager',this)">VOYAGER</button>
+            <button class="map-style-btn" id="style-a-street"    onclick="setBaseMap('a','street',this)">STREET</button>
+            <button class="map-style-btn" id="style-a-topo"      onclick="setBaseMap('a','topo',this)">TOPO</button>
+            <button class="map-style-btn" id="style-a-dark"      onclick="setBaseMap('a','dark',this)">DARK</button>
+        </div>
+        <div class="map-wrapper">
+            <div id="map-a" class="map"></div>
+            <div class="ctrl-tab" onclick="togglePanel('panel-a')">LAYERS</div>
+            <div class="ctrl-panel" id="panel-a">
+                <div class="ctrl-section-label">FLIGHT DATA</div>
+                <button id="btn-flights"  class="pane-btn inactive" onclick="toggleLayer('flights')">● FLIGHTS</button>
+                <button id="refresh-btn"  class="pane-btn"          onclick="manualRefreshFlights()">↺ REFRESH</button>
+                <button id="btn-details"  class="pane-btn inactive" onclick="toggleDetails()">◈ DETAILS ON LABEL</button>
+                <div class="ctrl-section-label">AIRSPACE</div>
+                <button id="btn-airspace" class="pane-btn active"   onclick="toggleLayer('airspace')">● AIRSPACE CTRs</button>
+            </div>
+            <div class="info-overlay" id="info-a">
+                <div class="info-overlay-head">MAP_A // SOURCE INFO</div>
+                <div class="info-overlay-body" id="info-a-body"></div>
+            </div>
         </div>
     </div>
+
+    <!-- PANE B: SATELLITE + WEATHER -->
     <div class="pane" id="pane-b">
-        <div id="map-b" class="map"></div>
-        <div class="pane-controls">
-            <button id="btn-weather" class="pane-btn active" onclick="toggleLayer('weather')">● WEATHER</button>
+        <div class="pane-header">
+            <span class="pane-header-label">BASE:</span>
+            <button class="map-style-btn active" id="style-b-satellite" onclick="setBaseMap('b','satellite',this)">SATELLITE</button>
+            <button class="map-style-btn" id="style-b-positron"  onclick="setBaseMap('b','positron',this)">POSITRON</button>
+            <button class="map-style-btn" id="style-b-voyager"   onclick="setBaseMap('b','voyager',this)">VOYAGER</button>
+            <button class="map-style-btn" id="style-b-street"    onclick="setBaseMap('b','street',this)">STREET</button>
+            <button class="map-style-btn" id="style-b-topo"      onclick="setBaseMap('b','topo',this)">TOPO</button>
+            <button class="map-style-btn" id="style-b-dark"      onclick="setBaseMap('b','dark',this)">DARK</button>
+        </div>
+        <div class="map-wrapper">
+            <div id="map-b" class="map"></div>
+            <div class="ctrl-tab" onclick="togglePanel('panel-b')">LAYERS</div>
+            <div class="ctrl-panel" id="panel-b">
+                <div class="ctrl-section-label">BASE MAP</div>
+                <button id="btn-terrain" class="pane-btn active" onclick="toggleLayer('terrain')">● ROADS OVERLAY</button>
+                <div class="ctrl-section-label">OWM // PRECIPITATION</div>
+                <button id="btn-weather-precipitation_new"      class="pane-btn inactive" onclick="toggleWeather('precipitation_new')">● PRECIPITATION</button>
+                <button id="btn-weather-precipitation_classic"  class="pane-btn inactive" onclick="toggleWeather('precipitation_classic')">● PRECIP CLASSIC</button>
+                <button id="btn-weather-rain_new"               class="pane-btn inactive" onclick="toggleWeather('rain_new')">● RAIN</button>
+                <button id="btn-weather-rain_classic"           class="pane-btn inactive" onclick="toggleWeather('rain_classic')">● RAIN CLASSIC</button>
+                <button id="btn-weather-snow"                   class="pane-btn inactive" onclick="toggleWeather('snow')">● SNOW</button>
+                <div class="ctrl-section-label">OWM // ATMOSPHERE</div>
+                <button id="btn-weather-clouds_new"             class="pane-btn inactive" onclick="toggleWeather('clouds_new')">● CLOUD COVER</button>
+                <button id="btn-weather-clouds_classic"         class="pane-btn inactive" onclick="toggleWeather('clouds_classic')">● CLOUD CLASSIC</button>
+                <button id="btn-weather-pressure_new"           class="pane-btn inactive" onclick="toggleWeather('pressure_new')">● PRESSURE</button>
+                <button id="btn-weather-pressure_cntr"          class="pane-btn inactive" onclick="toggleWeather('pressure_cntr')">● PRESSURE CONTOUR</button>
+                <button id="btn-weather-wind_new"               class="pane-btn inactive" onclick="toggleWeather('wind_new')">● WIND SPEED</button>
+                <div class="ctrl-section-label">OWM // SURFACE</div>
+                <button id="btn-weather-temp_new"               class="pane-btn inactive" onclick="toggleWeather('temp_new')">● TEMPERATURE</button>
+            </div>
+            <div class="info-overlay" id="info-b">
+                <div class="info-overlay-head">MAP_B // SOURCE INFO</div>
+                <div class="info-overlay-body" id="info-b-body"></div>
+            </div>
         </div>
     </div>
-    <div class="pane" id="pane-c">
-        <div id="map-c" class="map"></div>
-        <div class="pane-controls">
-            <button id="btn-terrain" class="pane-btn active" onclick="toggleLayer('terrain')">● SATELLITE</button>
-        </div>
-    </div>
+
 </div>
 
 <!-- Aircraft detail popup -->
@@ -182,18 +326,14 @@
 Cesium.Ion.defaultAccessToken = '';
 
 const LONDON = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 25000.0);
-const LONDON_200KM = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 200000.0);
 const LOOK_DOWN = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
-
-// Panes excluded from camera sync — fixed at their own altitude
-const SYNC_EXEMPT = new Set(['map-b']);
 
 const viewers = {};
 let activeMaster = 'map-a';
+let OWM_KEY = '';  // loaded from key file on boot
 
-// Which layers are currently enabled (for toggle)
-// flights disabled by default — preserve API credits
-const layerEnabled = { flights: false, weather: true, airspace: true, terrain: true };
+// flights off by default — preserve API credits
+const layerEnabled = { flights: false, airspace: true, terrain: true };
 
 // ─── LAYER: FLIGHTS ───────────────────────────────────────────────────────────
 const FlightsLayer = {
@@ -367,45 +507,58 @@ const FlightsLayer = {
     }
 };
 
-// ─── LAYER: WEATHER ───────────────────────────────────────────────────────────
+// ─── LAYER: WEATHER (OpenWeatherMap — multiple independent layers) ────────────
 const WeatherLayer = {
     id: 'weather',
-    _imageryLayer: null,
     _viewer: null,
+    // Each OWM layer type tracked independently
+    _layers: {},  // layerType -> Cesium.ImageryLayer
 
-    async init(viewer) {
+    init(viewer) {
         this._viewer = viewer;
-        return this.refresh();
+        console.log('[weather] standby — all layers off by default');
     },
 
-    async refresh() {
+    async loadLayer(layerType) {
+        const v = this._viewer;
+        if (!v || !OWM_KEY) { console.warn('[weather] no viewer or key'); return; }
+
+        // Remove existing layer of this type if present
+        if (this._layers[layerType]) {
+            v.imageryLayers.remove(this._layers[layerType], true);
+            delete this._layers[layerType];
+        }
+
+        const tileUrl = `https://tile.openweathermap.org/map/${layerType}/{z}/{x}/{y}.png?appid=${OWM_KEY}`;
+        const provider = new Cesium.UrlTemplateImageryProvider({
+            url: tileUrl,
+            minimumLevel: 0,
+            maximumLevel: 18,
+            credit: 'OpenWeatherMap'
+        });
+        const layer = new Cesium.ImageryLayer(provider, { alpha: 0.65 });
+        v.imageryLayers.add(layer);
+        this._layers[layerType] = layer;
+        console.log(`[weather] loaded: ${layerType}`);
+    },
+
+    removeLayer(layerType) {
+        const v = this._viewer;
+        if (!v || !this._layers[layerType]) return;
+        v.imageryLayers.remove(this._layers[layerType], true);
+        delete this._layers[layerType];
+        console.log(`[weather] removed: ${layerType}`);
+    },
+
+    // show/hide/destroy satisfy the layer interface
+    show() { Object.values(this._layers).forEach(l => l.show = true); },
+    hide() { Object.values(this._layers).forEach(l => l.show = false); },
+    refresh() {},
+    destroy() {
         const v = this._viewer;
         if (!v) return;
-        if (this._imageryLayer) { v.imageryLayers.remove(this._imageryLayer, true); this._imageryLayer = null; }
-        try {
-            const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-            const data = await res.json();
-            const frames = data.radar?.past;
-            if (!frames || !frames.length) return;
-            const latest = frames[frames.length - 1];
-            const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
-            const provider = new Cesium.UrlTemplateImageryProvider({
-                url: tileUrl,
-                minimumLevel: 0,
-                maximumLevel: 12,
-                credit: 'RainViewer'
-            });
-            this._imageryLayer = new Cesium.ImageryLayer(provider, { alpha: 0.65 });
-            v.imageryLayers.add(this._imageryLayer);
-            console.log('[weather] loaded');
-        } catch(e) { console.warn('[weather] fetch failed:', e.message); }
-    },
-
-    show() { if (this._imageryLayer) this._imageryLayer.show = true; },
-    hide() { if (this._imageryLayer) this._imageryLayer.show = false; },
-    destroy() {
-        if (this._viewer && this._imageryLayer) this._viewer.imageryLayers.remove(this._imageryLayer, true);
-        this._imageryLayer = null;
+        Object.values(this._layers).forEach(l => v.imageryLayers.remove(l, true));
+        this._layers = {};
     }
 };
 
@@ -484,9 +637,10 @@ const AirspaceLayer = {
 };
 
 // ─── LAYER: TERRAIN/SATELLITE ─────────────────────────────────────────────────
+// Esri satellite is the base layer on map-b — this layer controls the
+// roads/transport reference overlay on top of it.
 const TerrainLayer = {
     id: 'terrain',
-    _satLayer: null,
     _roadsLayer: null,
     _viewer: null,
 
@@ -498,18 +652,7 @@ const TerrainLayer = {
     refresh() {
         const v = this._viewer;
         if (!v) return;
-        if (this._satLayer)   { v.imageryLayers.remove(this._satLayer, true);   this._satLayer = null; }
         if (this._roadsLayer) { v.imageryLayers.remove(this._roadsLayer, true); this._roadsLayer = null; }
-
-        const satProvider = new Cesium.UrlTemplateImageryProvider({
-            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            credit: 'Esri World Imagery',
-            minimumLevel: 0,
-            maximumLevel: 19
-        });
-        this._satLayer = new Cesium.ImageryLayer(satProvider);
-        v.imageryLayers.add(this._satLayer);
-
         const roadsProvider = new Cesium.UrlTemplateImageryProvider({
             url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
             credit: 'Esri',
@@ -518,103 +661,42 @@ const TerrainLayer = {
         });
         this._roadsLayer = new Cesium.ImageryLayer(roadsProvider, { alpha: 0.5 });
         v.imageryLayers.add(this._roadsLayer);
-        console.log('[terrain] loaded');
+        console.log('[terrain] roads overlay loaded');
     },
 
-    show() {
-        if (this._satLayer)   this._satLayer.show = true;
-        if (this._roadsLayer) this._roadsLayer.show = true;
-    },
-    hide() {
-        if (this._satLayer)   this._satLayer.show = false;
-        if (this._roadsLayer) this._roadsLayer.show = false;
-    },
+    show() { if (this._roadsLayer) this._roadsLayer.show = true; },
+    hide() { if (this._roadsLayer) this._roadsLayer.show = false; },
     destroy() {
-        const v = this._viewer;
-        if (!v) return;
-        if (this._satLayer)   v.imageryLayers.remove(this._satLayer, true);
-        if (this._roadsLayer) v.imageryLayers.remove(this._roadsLayer, true);
-        this._satLayer = null; this._roadsLayer = null;
+        if (this._viewer && this._roadsLayer) {
+            this._viewer.imageryLayers.remove(this._roadsLayer, true);
+            this._roadsLayer = null;
+        }
     }
 };
 
 // ─── PANE SETUP ───────────────────────────────────────────────────────────────
-// map-a: flights + airspace merged
-// map-b: weather only (sync exempt, fixed 200km)
-// map-c: satellite only
 const PANE_CONFIG = [
     { id: 'map-a', label: 'FLIGHTS + AIRSPACE', layers: [FlightsLayer, AirspaceLayer] },
-    { id: 'map-b', label: 'WEATHER',            layers: [WeatherLayer]                },
-    { id: 'map-c', label: 'SATELLITE',          layers: [TerrainLayer]                },
+    { id: 'map-b', label: 'SATELLITE + WEATHER', layers: [TerrainLayer, WeatherLayer]  },
 ];
 
-// Cesium 1.110: imageryProvider constructor option is deprecated.
-// Must use baseLayer: Cesium.ImageryLayer.fromProviderAsync(...) or
-// baseLayer: new Cesium.ImageryLayer(provider) pattern.
-
-function makeDarkLayer() {
+// Esri World Imagery — default base for both panes
+function makeEsriSatelliteLayer() {
     return new Cesium.ImageryLayer(
         new Cesium.UrlTemplateImageryProvider({
-            url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-            credit: 'CartoDB',
+            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            credit: 'Esri World Imagery',
             minimumLevel: 0,
             maximumLevel: 19
         })
     );
 }
-
-function makeOsmLayer() {
-    return new Cesium.ImageryLayer(
-        new Cesium.UrlTemplateImageryProvider({
-            url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            credit: 'OpenStreetMap',
-            minimumLevel: 0,
-            maximumLevel: 19
-        })
-    );
-}
-
-function makeVoyagerLayer() {
-    return new Cesium.ImageryLayer(
-        new Cesium.UrlTemplateImageryProvider({
-            url: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-            credit: 'CartoDB Voyager',
-            minimumLevel: 0,
-            maximumLevel: 19
-        })
-    );
-}
-
-function makePositronLayer() {
-    return new Cesium.ImageryLayer(
-        new Cesium.UrlTemplateImageryProvider({
-            url: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            credit: 'CartoDB Positron',
-            minimumLevel: 0,
-            maximumLevel: 19
-        })
-    );
-}
-
-// Per-pane base layers
-// map-a: Positron (light, clean — airspace rings and flight dots pop against it)
-// map-b: Voyager (coloured, radar precipitation colours read well)
-// map-c: Dark (satellite layer replaces it anyway)
-const PANE_BASE = {
-    'map-a': makePositronLayer,
-    'map-b': makeVoyagerLayer,
-    'map-c': makeDarkLayer,
-};
-
-// Per-pane default camera
-const PANE_CAMERA = {
-    'map-b': LONDON_200KM,  // weather fixed at 200km
-};
 
 async function initPane(config) {
-    const baseLayerFn = PANE_BASE[config.id] || makeDarkLayer;
+    // Both panes start with Esri satellite — switchable via sub-header buttons
+    const initialLayer = makeEsriSatelliteLayer();
     const viewer = new Cesium.Viewer(config.id, {
-        baseLayer: baseLayerFn(),
+        baseLayer: initialLayer,
         baseLayerPicker: false,
         geocoder: false,
         homeButton: false,
@@ -627,20 +709,22 @@ async function initPane(config) {
         skyAtmosphere: false,
     });
 
-    // Explicitly enable mouse/trackpad zoom on all panes
-    viewer.scene.screenSpaceCameraController.enableZoom       = true;
-    viewer.scene.screenSpaceCameraController.enableTranslate  = true;
-    viewer.scene.screenSpaceCameraController.enableRotate     = true;
-    viewer.scene.screenSpaceCameraController.enableTilt       = false; // keep top-down
-    viewer.scene.screenSpaceCameraController.zoomEventTypes   = [
+    // Register initial base layer so setBaseMap can replace it later
+    const paneKey = config.id.replace('map-', '');
+    paneBaseLayers[paneKey] = initialLayer;
+
+    // Enable mouse/trackpad zoom on all panes
+    viewer.scene.screenSpaceCameraController.enableZoom      = true;
+    viewer.scene.screenSpaceCameraController.enableTranslate = true;
+    viewer.scene.screenSpaceCameraController.enableRotate    = true;
+    viewer.scene.screenSpaceCameraController.enableTilt      = false;
+    viewer.scene.screenSpaceCameraController.zoomEventTypes  = [
         Cesium.CameraEventType.WHEEL,
         Cesium.CameraEventType.PINCH
     ];
 
-    const cameraAlt = PANE_CAMERA[config.id] || LONDON;
-    viewer.camera.setView({ destination: cameraAlt, orientation: LOOK_DOWN });
+    viewer.camera.setView({ destination: LONDON, orientation: LOOK_DOWN });
 
-    // Pane label
     const lbl = document.createElement('div');
     lbl.className = 'pane-label';
     lbl.innerText = `[ ${config.label} ]`;
@@ -648,15 +732,11 @@ async function initPane(config) {
 
     viewers[config.id] = viewer;
 
-    // Master on hover — exempt panes never become master
     viewer.container.addEventListener('mouseenter', () => {
-        if (!SYNC_EXEMPT.has(config.id)) {
-            activeMaster = config.id;
-            updateStatusBar();
-        }
+        activeMaster = config.id;
+        updateStatusBar();
     });
 
-    // Init all layers for this pane
     for (const layer of config.layers) {
         layer._viewer = viewer;
         await layer.init(viewer);
@@ -667,17 +747,13 @@ async function initPane(config) {
 function setupCameraSync() {
     Object.keys(viewers).forEach(id => {
         viewers[id].scene.postRender.addEventListener(() => {
-            // Exempt panes never drive the sync and never receive it
-            if (SYNC_EXEMPT.has(id)) return;
             if (id !== activeMaster) return;
-
-            const cam = viewers[id].camera;
+            const cam  = viewers[id].camera;
             const dest = cam.position.clone();
             const dir  = cam.direction.clone();
             const up   = cam.up.clone();
-
             Object.keys(viewers).forEach(tid => {
-                if (tid !== id && !SYNC_EXEMPT.has(tid)) {
+                if (tid !== id) {
                     viewers[tid].camera.setView({ destination: dest, orientation: { direction: dir, up } });
                 }
             });
@@ -685,8 +761,6 @@ function setupCameraSync() {
         });
     });
 }
-
-// Prevent weather pane from becoming master when hovered — handled in initPane mouseenter
 
 function updateStatusBar() {
     const master = viewers[activeMaster];
@@ -698,7 +772,7 @@ function updateStatusBar() {
 }
 
 // ─── LAYER TOGGLE ────────────────────────────────────────────────────────────
-const layerModules = { flights: FlightsLayer, weather: WeatherLayer, airspace: AirspaceLayer, terrain: TerrainLayer };
+const layerModules = { flights: FlightsLayer, airspace: AirspaceLayer, terrain: TerrainLayer };
 
 function toggleLayer(id) {
     layerEnabled[id] = !layerEnabled[id];
@@ -712,6 +786,197 @@ function toggleLayer(id) {
         btn.classList.remove('active');
         btn.classList.add('inactive');
     }
+    updateInfoPanels();
+}
+
+// ─── BASE MAP STYLES ─────────────────────────────────────────────────────────
+const BASE_MAP_STYLES = {
+    satellite: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        credit: 'Esri World Imagery', minimumLevel: 0, maximumLevel: 19
+    }),
+    positron: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        credit: 'CartoDB Positron', minimumLevel: 0, maximumLevel: 19
+    }),
+    voyager: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+        credit: 'CartoDB Voyager', minimumLevel: 0, maximumLevel: 19
+    }),
+    street: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        credit: 'Esri World Street Map', minimumLevel: 0, maximumLevel: 19
+    }),
+    topo: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+        credit: 'Esri World Topo', minimumLevel: 0, maximumLevel: 19
+    }),
+    dark: () => new Cesium.UrlTemplateImageryProvider({
+        url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        credit: 'CartoDB Dark Matter', minimumLevel: 0, maximumLevel: 19
+    }),
+};
+
+// Track current base layer per pane so we can remove it on switch
+const paneBaseLayers = { a: null, b: null };
+
+function setBaseMap(paneId, styleKey, clickedBtn) {
+    const viewer = viewers[`map-${paneId}`];
+    if (!viewer) return;
+
+    const providerFn = BASE_MAP_STYLES[styleKey];
+    if (!providerFn) return;
+
+    // Remove existing base layer
+    if (paneBaseLayers[paneId]) {
+        viewer.imageryLayers.remove(paneBaseLayers[paneId], true);
+    }
+
+    // Add new base layer at index 0 (bottom)
+    const newLayer = new Cesium.ImageryLayer(providerFn());
+    viewer.imageryLayers.add(newLayer, 0);
+    paneBaseLayers[paneId] = newLayer;
+
+    // Update button states in this pane's sub-header
+    document.querySelectorAll(`#pane-${paneId} .map-style-btn`).forEach(b => {
+        b.classList.remove('active');
+    });
+    clickedBtn.classList.add('active');
+    paneBaseStyle[paneId] = styleKey;
+
+    console.log(`[basemap] pane-${paneId} → ${styleKey}`);
+    updateInfoPanels();
+}
+
+// ─── INFO PANELS ─────────────────────────────────────────────────────────────
+const BASE_MAP_LABELS = {
+    satellite: 'Esri World Imagery',
+    positron:  'CartoDB Positron',
+    voyager:   'CartoDB Voyager',
+    street:    'Esri World Street Map',
+    topo:      'Esri World Topo',
+    dark:      'CartoDB Dark Matter',
+};
+
+// Track current base style per pane for the info panel
+const paneBaseStyle = { a: 'satellite', b: 'satellite' };
+
+function infoRow(key, val, active = false) {
+    return `<div class="info-row">
+        <span class="info-key">${key}</span>
+        <span class="info-val${active ? ' active' : ''}">${val}</span>
+    </div>`;
+}
+function infoDivider(label) {
+    return `<div class="info-divider">─ ${label} ─</div>`;
+}
+
+function updateInfoPanels() {
+    // ── PANE A ──────────────────────────────────────────
+    const baseA = BASE_MAP_LABELS[paneBaseStyle.a] || paneBaseStyle.a;
+    const flightsOn  = layerEnabled.flights;
+    const airspaceOn = layerEnabled.airspace;
+    const flightCount = FlightsLayer._entities?.length ?? 0;
+
+    let aHtml = '';
+    aHtml += infoDivider('BASE MAP');
+    aHtml += infoRow('TILE', baseA, true);
+    aHtml += infoRow('SRC', paneBaseStyle.a === 'satellite' || paneBaseStyle.a === 'street' || paneBaseStyle.a === 'topo' ? 'esri.com' : 'carto.com');
+
+    aHtml += infoDivider('FLIGHT DATA');
+    aHtml += infoRow('STATE', flightsOn ? 'ACTIVE' : 'OFF', flightsOn);
+    aHtml += infoRow('SRC', 'opensky-network.org');
+    aHtml += infoRow('META', 'opensky-network.org/api');
+    aHtml += infoRow('PHOTO', 'planespotters.net');
+    aHtml += infoRow('COUNT', flightsOn ? `${flightCount} ac` : '—');
+
+    aHtml += infoDivider('AIRSPACE');
+    aHtml += infoRow('STATE', airspaceOn ? 'ACTIVE' : 'OFF', airspaceOn);
+    aHtml += infoRow('SRC', 'inline / static');
+    aHtml += infoRow('CTRS', '6 UK airports');
+
+    document.getElementById('info-a-body').innerHTML = aHtml;
+
+    // ── PANE B ──────────────────────────────────────────
+    const baseB = BASE_MAP_LABELS[paneBaseStyle.b] || paneBaseStyle.b;
+    const roadsOn = layerEnabled.terrain;
+    const activeLayers = Object.keys(WeatherLayer._layers);
+
+    let bHtml = '';
+    bHtml += infoDivider('BASE MAP');
+    bHtml += infoRow('TILE', baseB, true);
+    bHtml += infoRow('SRC', paneBaseStyle.b === 'satellite' || paneBaseStyle.b === 'street' || paneBaseStyle.b === 'topo' ? 'esri.com' : 'carto.com');
+
+    bHtml += infoDivider('OVERLAYS');
+    bHtml += infoRow('ROADS', roadsOn ? 'ON' : 'OFF', roadsOn);
+    if (roadsOn) bHtml += infoRow('SRC', 'esri.com/transport');
+
+    bHtml += infoDivider('WEATHER');
+    bHtml += infoRow('SRC', 'openweathermap.org');
+    bHtml += infoRow('API', 'maps/1.0/tile');
+    bHtml += infoRow('KEY', OWM_KEY ? `${OWM_KEY.slice(0,4)}…${OWM_KEY.slice(-4)}` : 'NOT LOADED');
+    if (activeLayers.length === 0) {
+        bHtml += infoRow('LAYERS', 'NONE ACTIVE');
+    } else {
+        activeLayers.forEach(k => {
+            bHtml += infoRow('▸', (OWM_LAYERS[k] || k), true);
+        });
+    }
+
+    document.getElementById('info-b-body').innerHTML = bHtml;
+}
+
+// ─── PANEL TOGGLE ────────────────────────────────────────────────────────────
+function togglePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    panel.classList.toggle('open');
+}
+
+// Close panels when clicking on the map itself
+document.addEventListener('click', (e) => {
+    ['panel-a', 'panel-b'].forEach(id => {
+        const panel = document.getElementById(id);
+        if (!panel) return;
+        const tab = panel.previousElementSibling;
+        if (!panel.contains(e.target) && e.target !== tab) {
+            panel.classList.remove('open');
+        }
+    });
+});
+
+// ─── WEATHER LAYER TOGGLES ────────────────────────────────────────────────────
+// Maps OWM layer key → button ID (btn-weather-{key})
+const OWM_LAYERS = {
+    'precipitation_new':     'PRECIPITATION',
+    'precipitation_classic': 'PRECIP CLASSIC',
+    'rain_new':              'RAIN',
+    'rain_classic':          'RAIN CLASSIC',
+    'snow':                  'SNOW',
+    'clouds_new':            'CLOUD COVER',
+    'clouds_classic':        'CLOUD CLASSIC',
+    'pressure_new':          'PRESSURE',
+    'pressure_cntr':         'PRESSURE CONTOUR',
+    'wind_new':              'WIND SPEED',
+    'temp_new':              'TEMPERATURE',
+};
+
+async function toggleWeather(layerType) {
+    const btn = document.getElementById(`btn-weather-${layerType}`);
+    const isOn = WeatherLayer._layers[layerType];
+
+    if (isOn) {
+        WeatherLayer.removeLayer(layerType);
+        btn.classList.remove('active');
+        btn.classList.add('inactive');
+    } else {
+        const label = OWM_LAYERS[layerType] || layerType;
+        btn.innerText = `◌ ${label}…`;
+        await WeatherLayer.loadLayer(layerType);
+        btn.innerText = `● ${label}`;
+        btn.classList.add('active');
+        btn.classList.remove('inactive');
+    }
+    updateInfoPanels();
 }
 
 // ─── ACTIONS ─────────────────────────────────────────────────────────────────
@@ -834,17 +1099,10 @@ async function takeScreenshot() {
     const grid = document.querySelector('.test-grid');
     canvas.width = grid.clientWidth;
     canvas.height = grid.clientHeight;
-
-    // map-a: full left half
     const va = document.querySelector('#map-a canvas');
     if (va) ctx.drawImage(va, 0, 0, canvas.width / 2, canvas.height);
-    // map-b: top right
     const vb = document.querySelector('#map-b canvas');
-    if (vb) ctx.drawImage(vb, canvas.width / 2, 0, canvas.width / 2, canvas.height / 2);
-    // map-c: bottom right
-    const vc = document.querySelector('#map-c canvas');
-    if (vc) ctx.drawImage(vc, canvas.width / 2, canvas.height / 2, canvas.width / 2, canvas.height / 2);
-
+    if (vb) ctx.drawImage(vb, canvas.width / 2, 0, canvas.width / 2, canvas.height);
     canvas.toBlob(async blob => {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         btn.innerText = 'COPIED!';
@@ -853,15 +1111,29 @@ async function takeScreenshot() {
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
-Promise.all(PANE_CONFIG.map(initPane)).then(() => {
+async function boot() {
+    // Load OWM key from local file
+    try {
+        OWM_KEY = await fetch('key').then(r => r.text()).then(t => t.trim());
+        console.log('[boot] OWM key loaded');
+    } catch(e) {
+        console.warn('[boot] Could not load key file — weather layer unavailable');
+    }
+
+    await Promise.all(PANE_CONFIG.map(initPane));
     setupCameraSync();
     updateStatusBar();
+
     // Apply initial disabled states
     Object.keys(layerEnabled).forEach(id => {
         if (!layerEnabled[id]) layerModules[id].hide();
     });
+
+    updateInfoPanels();
     console.log('[boot] all panes ready');
-});
+}
+
+boot();
 </script>
 </body>
 </html>
