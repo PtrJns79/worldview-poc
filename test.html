@@ -5,18 +5,78 @@
     <title>SECTOR_MATRIX // WORLDVIEW</title>
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
     <link href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    <link rel="stylesheet" href="test-style.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background: #000; overflow: hidden;
+            display: flex; flex-direction: column;
+            font-family: 'Share Tech Mono', 'Courier New', monospace;
+        }
+        #tools-header {
+            height: 48px; background: #050505;
+            border-bottom: 1px solid #1a3a1a;
+            display: flex; align-items: center;
+            padding: 0 16px; gap: 6px; flex-shrink: 0;
+        }
+        #sys-title {
+            color: #00ff41; font-size: 13px; letter-spacing: 0.1em;
+            text-shadow: 0 0 8px #00ff4166; margin-right: 10px;
+        }
+        .tool-btn {
+            padding: 6px 10px; background: transparent;
+            color: #00cc33; border: 1px solid #1a4a1a;
+            font-family: inherit; font-size: 10px; cursor: pointer;
+            letter-spacing: 0.05em; transition: all 0.15s ease;
+        }
+        .tool-btn:hover { background: #0a2a0a; border-color: #00cc33; color: #00ff41; }
+        .tool-btn.active { background: #003300; border-color: #00ff41; color: #00ff41; box-shadow: 0 0 6px #00ff4133; }
+        .tool-btn.inactive { opacity: 0.4; }
+        .tool-btn.primary { border-color: #00cc33; color: #00ff41; }
+        .tool-btn.primary:hover { background: #00cc33; color: #000; }
+        .sep { width: 1px; height: 24px; background: #1a3a1a; margin: 0 4px; }
+        #header-status {
+            margin-left: auto; display: flex; gap: 16px;
+            color: #00cc33; font-size: 11px; opacity: 0.8;
+        }
+        .test-grid {
+            display: grid; grid-template-columns: 50% 50%;
+            grid-template-rows: 50% 50%;
+            width: 100vw; height: calc(100vh - 48px); overflow: hidden;
+        }
+        .pane { position: relative; border: 0.5px solid #0d200d; overflow: hidden; }
+        .map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        .pane-label {
+            position: absolute; top: 10px; left: 10px;
+            color: #00cc33; font-family: 'Share Tech Mono', monospace;
+            font-size: 11px; background: rgba(0,0,0,0.8);
+            padding: 3px 8px; border: 1px solid #1a4a1a;
+            z-index: 100; pointer-events: none; letter-spacing: 0.08em;
+        }
+        .pane::after {
+            content: ''; position: absolute; inset: 0;
+            background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+            z-index: 50; pointer-events: none;
+        }
+        .cesium-widget-credits,
+        .cesium-viewer-toolbar { display: none !important; }
+    </style>
 </head>
 <body>
 
 <header id="tools-header">
     <span id="sys-title">WORLDVIEW // SECTOR_MATRIX</span>
-    <div id="header-controls">
-        <button id="refresh-btn" class="tool-btn">REFRESH_FLIGHTS</button>
-        <button id="zoom-in"     class="tool-btn">ZOOM_IN</button>
-        <button id="zoom-out"    class="tool-btn">ZOOM_OUT</button>
-        <button id="screenshot-btn" class="tool-btn primary">COPY_ALL</button>
-    </div>
+    <div class="sep"></div>
+    <button id="btn-flights"  class="tool-btn active"   onclick="toggleLayer('flights')">● FLIGHTS</button>
+    <button id="btn-weather"  class="tool-btn active"   onclick="toggleLayer('weather')">● WEATHER</button>
+    <button id="btn-airspace" class="tool-btn active"   onclick="toggleLayer('airspace')">● AIRSPACE</button>
+    <button id="btn-terrain"  class="tool-btn active"   onclick="toggleLayer('terrain')">● SATELLITE</button>
+    <div class="sep"></div>
+    <button id="refresh-btn"  class="tool-btn"          onclick="manualRefreshFlights()">REFRESH_FLIGHTS</button>
+    <button id="zoom-in"      class="tool-btn"          onclick="handleZoom('in')">ZOOM_IN</button>
+    <button id="zoom-out"     class="tool-btn"          onclick="handleZoom('out')">ZOOM_OUT</button>
+    <button id="screenshot-btn" class="tool-btn primary" onclick="takeScreenshot()">COPY_ALL</button>
     <div id="header-status">
         <span id="status-master">MASTER: MAP_A</span>
         <span id="status-alt">ALT: 25.0KM</span>
@@ -30,13 +90,375 @@
     <div class="pane"><div id="map-d" class="map"></div></div>
 </div>
 
-<!-- Layer modules — order matters, registry loaded last -->
-<script src="layers/flights.js"></script>
-<script src="layers/weather.js"></script>
-<script src="layers/airspace.js"></script>
-<script src="layers/terrain.js"></script>
-<script src="layer-registry.js"></script>
-<script src="test-logic.js"></script>
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+Cesium.Ion.defaultAccessToken = '';
 
+const LONDON = Cesium.Cartesian3.fromDegrees(-0.1276, 51.5072, 25000.0);
+const LOOK_DOWN = { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 };
+
+const viewers = {};
+let activeMaster = 'map-a';
+
+// Which layers are currently enabled (for toggle)
+const layerEnabled = { flights: true, weather: true, airspace: true, terrain: true };
+
+// ─── LAYER: FLIGHTS ───────────────────────────────────────────────────────────
+const FlightsLayer = {
+    id: 'flights',
+    _entities: [],
+    _viewer: null,
+
+    init(viewer) {
+        this._viewer = viewer;
+        return this.refresh();
+    },
+
+    async refresh() {
+        const v = this._viewer;
+        if (!v) return;
+        this._entities.forEach(e => v.entities.remove(e));
+        this._entities = [];
+
+        const url = 'https://opensky-network.org/api/states/all?lamin=51.2&lomin=-0.8&lamax=51.9&lomax=0.6';
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (!data.states) return { count: 0 };
+
+            data.states.forEach(p => {
+                const lon = p[5], lat = p[6], alt = p[7] || 1000;
+                const callsign = (p[1] || 'UNKNWN').trim();
+                const speed = p[9] ? Math.round(p[9] * 1.944) : '?';
+                if (!lon || !lat) return;
+                const e = v.entities.add({
+                    position: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
+                    point: { pixelSize: 8, color: Cesium.Color.LIME, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
+                    label: {
+                        text: `${callsign}\n${Math.round(alt)}m ${speed}kt`,
+                        font: '9pt Courier New', fillColor: Cesium.Color.LIME,
+                        pixelOffset: new Cesium.Cartesian2(0, -28),
+                        showBackground: true,
+                        backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.75)'),
+                        backgroundPadding: new Cesium.Cartesian2(4, 3)
+                    }
+                });
+                this._entities.push(e);
+            });
+            document.getElementById('btn-flights').innerText = `● FLIGHTS (${this._entities.length})`;
+            return { count: this._entities.length };
+        } catch(e) {
+            console.warn('[flights] fetch failed:', e.message);
+            document.getElementById('btn-flights').innerText = `● FLIGHTS (ERR)`;
+            return { error: e.message };
+        }
+    },
+
+    show() { this._entities.forEach(e => e.show = true); },
+    hide() { this._entities.forEach(e => e.show = false); },
+
+    destroy() {
+        if (this._viewer) this._entities.forEach(e => this._viewer.entities.remove(e));
+        this._entities = [];
+    }
+};
+
+// ─── LAYER: WEATHER ───────────────────────────────────────────────────────────
+const WeatherLayer = {
+    id: 'weather',
+    _imageryLayer: null,
+    _viewer: null,
+
+    async init(viewer) {
+        this._viewer = viewer;
+        return this.refresh();
+    },
+
+    async refresh() {
+        const v = this._viewer;
+        if (!v) return;
+        if (this._imageryLayer) { v.imageryLayers.remove(this._imageryLayer, true); this._imageryLayer = null; }
+        try {
+            const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+            const data = await res.json();
+            const frames = data.radar?.past;
+            if (!frames || !frames.length) return;
+            const latest = frames[frames.length - 1];
+            const tileUrl = `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+            const provider = new Cesium.UrlTemplateImageryProvider({ url: tileUrl, minimumLevel: 0, maximumLevel: 12, credit: 'RainViewer' });
+            this._imageryLayer = v.imageryLayers.addImageryProvider(provider);
+            this._imageryLayer.alpha = 0.65;
+            console.log('[weather] loaded');
+        } catch(e) { console.warn('[weather] fetch failed:', e.message); }
+    },
+
+    show() { if (this._imageryLayer) this._imageryLayer.show = true; },
+    hide() { if (this._imageryLayer) this._imageryLayer.show = false; },
+    destroy() {
+        if (this._viewer && this._imageryLayer) this._viewer.imageryLayers.remove(this._imageryLayer, true);
+        this._imageryLayer = null;
+    }
+};
+
+// ─── LAYER: AIRSPACE ──────────────────────────────────────────────────────────
+const AirspaceLayer = {
+    id: 'airspace',
+    _entities: [],
+    _viewer: null,
+
+    _airports: [
+        { icao: 'EGLL', name: 'Heathrow',    lon: -0.4543, lat: 51.4775, radius: 15000, cls: 'A' },
+        { icao: 'EGKK', name: 'Gatwick',     lon: -0.1903, lat: 51.1481, radius: 12000, cls: 'D' },
+        { icao: 'EGLC', name: 'London City', lon:  0.0552, lat: 51.5053, radius:  6000, cls: 'D' },
+        { icao: 'EGSS', name: 'Stansted',    lon:  0.2350, lat: 51.8850, radius: 12000, cls: 'D' },
+        { icao: 'EGGW', name: 'Luton',       lon: -0.3683, lat: 51.8747, radius: 10000, cls: 'D' },
+        { icao: 'EGMC', name: 'Southend',    lon:  0.6956, lat: 51.5713, radius:  8000, cls: 'D' },
+    ],
+
+    init(viewer) {
+        this._viewer = viewer;
+        return this.refresh();
+    },
+
+    refresh() {
+        const v = this._viewer;
+        if (!v) return;
+        this._entities.forEach(e => v.entities.remove(e));
+        this._entities = [];
+
+        this._airports.forEach(ap => {
+            const isA = ap.cls === 'A';
+            const fillColor = isA
+                ? Cesium.Color.fromCssColorString('rgba(255,50,50,0.12)')
+                : Cesium.Color.fromCssColorString('rgba(50,150,255,0.10)');
+            const outlineColor = isA
+                ? Cesium.Color.fromCssColorString('rgba(255,80,80,0.9)')
+                : Cesium.Color.fromCssColorString('rgba(80,180,255,0.8)');
+            const labelColor = isA
+                ? Cesium.Color.fromCssColorString('#ff8080')
+                : Cesium.Color.fromCssColorString('#80ccff');
+
+            const ctr = v.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(ap.lon, ap.lat, 0),
+                ellipse: {
+                    semiMinorAxis: ap.radius, semiMajorAxis: ap.radius,
+                    material: fillColor, outline: true, outlineColor,
+                    outlineWidth: 2, height: 0,
+                    extrudedHeight: isA ? 7000 : 3000
+                }
+            });
+
+            const lbl = v.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(ap.lon, ap.lat, 200),
+                point: { pixelSize: 10, color: outlineColor, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 },
+                label: {
+                    text: `${ap.icao}\nCLS ${ap.cls}`,
+                    font: '9pt Courier New', fillColor: labelColor,
+                    pixelOffset: new Cesium.Cartesian2(14, 0),
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.fromCssColorString('rgba(0,0,0,0.75)'),
+                    backgroundPadding: new Cesium.Cartesian2(4, 3)
+                }
+            });
+            this._entities.push(ctr, lbl);
+        });
+        console.log('[airspace] loaded', this._airports.length, 'CTRs');
+    },
+
+    show() { this._entities.forEach(e => e.show = true); },
+    hide() { this._entities.forEach(e => e.show = false); },
+    destroy() {
+        if (this._viewer) this._entities.forEach(e => this._viewer.entities.remove(e));
+        this._entities = [];
+    }
+};
+
+// ─── LAYER: TERRAIN/SATELLITE ─────────────────────────────────────────────────
+const TerrainLayer = {
+    id: 'terrain',
+    _satLayer: null,
+    _roadsLayer: null,
+    _viewer: null,
+
+    init(viewer) {
+        this._viewer = viewer;
+        return this.refresh();
+    },
+
+    refresh() {
+        const v = this._viewer;
+        if (!v) return;
+        if (this._satLayer)   { v.imageryLayers.remove(this._satLayer, true);   this._satLayer = null; }
+        if (this._roadsLayer) { v.imageryLayers.remove(this._roadsLayer, true); this._roadsLayer = null; }
+
+        const sat = new Cesium.UrlTemplateImageryProvider({
+            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            credit: 'Esri', minimumLevel: 0, maximumLevel: 19
+        });
+        this._satLayer = v.imageryLayers.addImageryProvider(sat, 1);
+
+        const roads = new Cesium.UrlTemplateImageryProvider({
+            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+            credit: 'Esri', minimumLevel: 0, maximumLevel: 19
+        });
+        this._roadsLayer = v.imageryLayers.addImageryProvider(roads);
+        this._roadsLayer.alpha = 0.5;
+        console.log('[terrain] loaded');
+    },
+
+    show() {
+        if (this._satLayer)   this._satLayer.show = true;
+        if (this._roadsLayer) this._roadsLayer.show = true;
+    },
+    hide() {
+        if (this._satLayer)   this._satLayer.show = false;
+        if (this._roadsLayer) this._roadsLayer.show = false;
+    },
+    destroy() {
+        const v = this._viewer;
+        if (!v) return;
+        if (this._satLayer)   v.imageryLayers.remove(this._satLayer, true);
+        if (this._roadsLayer) v.imageryLayers.remove(this._roadsLayer, true);
+        this._satLayer = null; this._roadsLayer = null;
+    }
+};
+
+// ─── PANE SETUP ───────────────────────────────────────────────────────────────
+// Each pane: which layer module to assign
+const PANE_CONFIG = [
+    { id: 'map-a', label: 'FLIGHTS',   layer: FlightsLayer  },
+    { id: 'map-b', label: 'WEATHER',   layer: WeatherLayer  },
+    { id: 'map-c', label: 'AIRSPACE',  layer: AirspaceLayer },
+    { id: 'map-d', label: 'SATELLITE', layer: TerrainLayer  },
+];
+
+function makeDarkProvider() {
+    return new Cesium.UrlTemplateImageryProvider({
+        url: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        credit: 'CartoDB', minimumLevel: 0, maximumLevel: 19
+    });
+}
+
+async function initPane(config) {
+    // Use the same init pattern as the original working app.js
+    const viewer = new Cesium.Viewer(config.id, {
+        imageryProvider: makeDarkProvider(),
+        baseLayerPicker: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        navigationHelpButton: false,
+        animation: false,
+        timeline: false,
+        fullscreenButton: false,
+        skyBox: false,
+        skyAtmosphere: false,
+    });
+
+    viewer.camera.setView({ destination: LONDON, orientation: LOOK_DOWN });
+
+    // Pane label
+    const lbl = document.createElement('div');
+    lbl.className = 'pane-label';
+    lbl.innerText = `[ ${config.label} ]`;
+    viewer.container.appendChild(lbl);
+
+    viewers[config.id] = viewer;
+
+    // Master on hover
+    viewer.container.addEventListener('mouseenter', () => {
+        activeMaster = config.id;
+        updateStatusBar();
+    });
+
+    // Init the layer
+    await config.layer.init(viewer);
+}
+
+// ─── CAMERA SYNC ─────────────────────────────────────────────────────────────
+function setupCameraSync() {
+    Object.keys(viewers).forEach(id => {
+        viewers[id].scene.postRender.addEventListener(() => {
+            if (id !== activeMaster) return;
+            const cam = viewers[id].camera;
+            const dest = cam.position.clone();
+            const dir  = cam.direction.clone();
+            const up   = cam.up.clone();
+            Object.keys(viewers).forEach(tid => {
+                if (tid !== id) viewers[tid].camera.setView({ destination: dest, orientation: { direction: dir, up } });
+            });
+            updateStatusBar();
+        });
+    });
+}
+
+function updateStatusBar() {
+    const master = viewers[activeMaster];
+    if (!master) return;
+    const cart = master.camera.positionCartographic;
+    const alt = cart ? (cart.height / 1000).toFixed(1) : '?';
+    document.getElementById('status-master').innerText = `MASTER: ${activeMaster.toUpperCase().replace('-','_')}`;
+    document.getElementById('status-alt').innerText = `ALT: ${alt}KM`;
+}
+
+// ─── LAYER TOGGLE ────────────────────────────────────────────────────────────
+const layerModules = { flights: FlightsLayer, weather: WeatherLayer, airspace: AirspaceLayer, terrain: TerrainLayer };
+
+function toggleLayer(id) {
+    layerEnabled[id] = !layerEnabled[id];
+    const btn = document.getElementById(`btn-${id}`);
+    if (layerEnabled[id]) {
+        layerModules[id].show();
+        btn.classList.add('active');
+        btn.classList.remove('inactive');
+    } else {
+        layerModules[id].hide();
+        btn.classList.remove('active');
+        btn.classList.add('inactive');
+    }
+}
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
+async function manualRefreshFlights() {
+    const btn = document.getElementById('refresh-btn');
+    btn.innerText = 'FETCHING...';
+    await FlightsLayer.refresh();
+    btn.innerText = 'REFRESH_FLIGHTS';
+}
+
+function handleZoom(dir) {
+    const master = viewers[activeMaster];
+    if (!master) return;
+    const h = master.camera.positionCartographic.height;
+    dir === 'in' ? master.camera.zoomIn(h * 0.25) : master.camera.zoomOut(h * 0.25);
+}
+
+async function takeScreenshot() {
+    const btn = document.getElementById('screenshot-btn');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const grid = document.querySelector('.test-grid');
+    canvas.width = grid.clientWidth;
+    canvas.height = grid.clientHeight;
+    ['map-a','map-b','map-c','map-d'].forEach((id, i) => {
+        const vc = document.querySelector(`#${id} canvas`);
+        if (!vc) return;
+        ctx.drawImage(vc, (i % 2) * canvas.width/2, Math.floor(i/2) * canvas.height/2, canvas.width/2, canvas.height/2);
+    });
+    canvas.toBlob(async blob => {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        btn.innerText = 'COPIED!';
+        setTimeout(() => btn.innerText = 'COPY_ALL', 2000);
+    });
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+Promise.all(PANE_CONFIG.map(initPane)).then(() => {
+    setupCameraSync();
+    updateStatusBar();
+    console.log('[boot] all panes ready');
+});
+</script>
 </body>
 </html>
